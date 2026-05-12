@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown → Image Generator</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f4f4ef;
+      color: #1a1a1a;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container { max-width: 940px; margin: 0 auto; }
+
+    header { margin-bottom: 1.75rem; }
+    header h1 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
+    header p { color: #777; font-size: 0.875rem; margin-top: 0.3rem; }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 1rem;
+    }
+
+    details summary {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #666;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+
+    details summary::before {
+      content: '▶';
+      font-size: 0.6rem;
+      transition: transform 0.15s;
+    }
+
+    details[open] summary::before { transform: rotate(90deg); }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+      display: inline-block;
+      margin-left: auto;
+    }
+    .status-dot.ok  { background: #4caf50; }
+    .status-dot.err { background: #e53935; }
+
+    .gh-fields {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    @media (max-width: 640px) {
+      .gh-fields { grid-template-columns: 1fr; }
+      .editor-grid { grid-template-columns: 1fr; }
+    }
+
+    .field-group { display: flex; flex-direction: column; gap: 4px; }
+    .field-group label { font-size: 0.7rem; color: #999; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+    .field-group input {
+      border: 1px solid #ddd; border-radius: 6px;
+      padding: 7px 10px; font-size: 13px;
+      outline: none; background: #fff; width: 100%;
+    }
+    .field-group input:focus { border-color: #999; }
+    .field-group input[type="password"] { font-family: monospace; letter-spacing: 0.1em; }
+
+    .gh-note { margin-top: 10px; font-size: 0.78rem; color: #999; line-height: 1.6; }
+    .gh-note a { color: #555; }
+
+    .settings-body {
+      margin-top: 14px;
+      display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+    }
+
+    .opt-group { display: flex; flex-direction: column; gap: 4px; }
+    .opt-group label { font-size: 0.7rem; color: #999; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; }
+    .opt-group input[type="number"], .opt-group select {
+      border: 1px solid #ddd; border-radius: 6px;
+      padding: 5px 8px; font-size: 13px; outline: none; background: #fff;
+    }
+    .opt-group input[type="number"] { width: 80px; }
+    .opt-group input[type="color"] {
+      width: 44px; height: 32px;
+      border: 1px solid #ddd; border-radius: 6px; cursor: pointer; padding: 2px;
+    }
+
+    .editor-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .panel-label {
+      font-size: 0.7rem; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: #999; margin-bottom: 0.4rem;
+    }
+
+    textarea {
+      width: 100%; height: 220px;
+      border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 12px;
+      font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6;
+      resize: vertical; background: #fff; color: #1a1a1a;
+      outline: none; transition: border-color 0.15s;
+    }
+    textarea:focus { border-color: #999; }
+
+    .preview-box {
+      height: 220px; overflow-y: auto;
+      border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 12px; background: #fff; font-size: 14px; line-height: 1.7;
+    }
+    .preview-box h1 { font-size: 1.4em; margin-bottom: 0.5em; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }
+    .preview-box h2 { font-size: 1.2em; margin: 0.8em 0 0.4em; }
+    .preview-box h3 { font-size: 1.05em; margin: 0.6em 0 0.3em; }
+    .preview-box p  { margin-bottom: 0.6em; }
+    .preview-box ul, .preview-box ol { padding-left: 1.4em; margin-bottom: 0.6em; }
+    .preview-box code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 0.85em; }
+    .preview-box pre { background: #f5f5f5; padding: 10px; border-radius: 6px; overflow-x: auto; margin-bottom: 0.6em; }
+    .preview-box blockquote { border-left: 3px solid #ccc; padding: 4px 10px; color: #666; margin-bottom: 0.6em; }
+    .preview-box table { border-collapse: collapse; width: 100%; margin-bottom: 0.6em; }
+    .preview-box th, .preview-box td { border: 1px solid #ddd; padding: 5px 8px; }
+    .preview-box th { background: #f5f5f5; }
+    .preview-box strong { font-weight: 700; }
+    .preview-box em { font-style: italic; }
+
+    .action-bar {
+      display: flex; gap: 10px; align-items: center;
+      margin-bottom: 1rem; flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      background: #1a1a1a; color: #fff;
+      border: none; border-radius: 8px;
+      padding: 9px 22px; font-size: 14px; font-weight: 500;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.75; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: #fff; color: #1a1a1a;
+      border: 1px solid #ddd; border-radius: 8px;
+      padding: 9px 22px; font-size: 14px; font-weight: 500;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-secondary:hover { background: #f5f5f5; }
+
+    .btn-sm {
+      background: #1a1a1a; color: #fff;
+      border: none; border-radius: 6px;
+      padding: 7px 16px; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn-sm:hover { opacity: 0.75; }
+
+    .push-status { font-size: 13px; color: #888; margin-left: auto; }
+    .push-status.success { color: #4caf50; font-weight: 500; }
+    .push-status.error   { color: #e53935; font-weight: 500; }
+
+    .output-section { display: none; margin-top: 1.25rem; }
+    .output-section.visible { display: block; }
+
+    .output-canvas-wrap {
+      background: #fff; border: 1px solid #e0e0e0;
+      border-radius: 10px; padding: 16px;
+      margin-bottom: 1rem; text-align: center;
+    }
+
+    #output-canvas { max-width: 100%; border: 1px solid #eee; border-radius: 4px; }
+
+    .url-block {
+      background: #fff; border: 1px solid #e0e0e0;
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
+    }
+    .url-block h3 {
+      font-size: 0.7rem; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #aaa; font-weight: 500; margin-bottom: 6px;
+    }
+
+    .url-row { display: flex; gap: 8px; align-items: center; }
+    .url-row + .url-row { margin-top: 6px; }
+    .url-row input {
+      flex: 1; border: 1px solid #e0e0e0; border-radius: 6px;
+      padding: 6px 10px; font-family: 'Courier New', monospace;
+      font-size: 12px; background: #fafafa; color: #333;
+      outline: none; min-width: 0;
+    }
+
+    .btn-copy {
+      background: #fff; border: 1px solid #ddd; border-radius: 6px;
+      padding: 6px 12px; font-size: 12px; font-weight: 500;
+      cursor: pointer; white-space: nowrap; transition: background 0.15s;
+    }
+    .btn-copy:hover { background: #f0f0f0; }
+    .btn-copy.copied { background: #e8f5e9; border-color: #a5d6a7; color: #2e7d32; }
+
+    .gh-embed-block {
+      background: #f0faf4; border: 1px solid #b9e4c9;
+      border-radius: 10px; padding: 16px 20px; margin-bottom: 10px;
+    }
+    .gh-embed-block h3 {
+      font-size: 0.75rem; text-transform: uppercase;
+      letter-spacing: 0.08em; color: #388e3c; font-weight: 600; margin-bottom: 10px;
+    }
+
+    footer { margin-top: 2.5rem; text-align: center; font-size: 0.78rem; color: #bbb; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Markdown → Image Generator</h1>
+    <p>マークダウンを画像にして GitHub Pages へ直接プッシュ。URLは毎回同じ。</p>
+  </header>
+
+  <!-- GitHub 設定 -->
+  <details class="panel" id="gh-details">
+    <summary>
+      GitHub 設定
+      <span class="status-dot" id="status-dot"></span>
+    </summary>
+    <div class="gh-fields">
+      <div class="field-group">
+        <label>GitHub ユーザー名</label>
+        <input type="text" id="gh-user" placeholder="username">
+      </div>
+      <div class="field-group">
+        <label>リポジトリ名</label>
+        <input type="text" id="gh-repo" placeholder="my-repo">
+      </div>
+      <div class="field-group">
+        <label>ブランチ</label>
+        <input type="text" id="gh-branch" placeholder="main">
+      </div>
+      <div class="field-group">
+        <label>保存先パス（例: images/card.png）</label>
+        <input type="text" id="gh-path" placeholder="images/card.png">
+      </div>
+      <div class="field-group" style="grid-column: 1 / -1;">
+        <label>Personal Access Token（Contents: Read and write 権限が必要）</label>
+        <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+      </div>
+    </div>
+    <p class="gh-note">
+      ※ 設定はこのブラウザの <strong>localStorage</strong> に保存されます。自分専用のページでのみお使いください。<br>
+      トークン取得: <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a>
+      → Fine-grained token → Contents: Read and write
+    </p>
+    <button class="btn-sm" style="margin-top:12px;" onclick="saveConfig()">保存して確認</button>
+  </details>
+
+  <!-- 画像設定 -->
+  <details class="panel">
+    <summary>画像設定</summary>
+    <div class="settings-body">
+      <div class="opt-group">
+        <label>幅 (px)</label>
+        <input type="number" id="img-width" value="700" min="200" max="1400">
+      </div>
+      <div class="opt-group">
+        <label>パディング (px)</label>
+        <input type="number" id="img-padding" value="24" min="8" max="80">
+      </div>
+      <div class="opt-group">
+        <label>フォントサイズ (px)</label>
+        <input type="number" id="img-fontsize" value="16" min="10" max="28">
+      </div>
+      <div class="opt-group">
+        <label>背景色</label>
+        <input type="color" id="img-bg" value="#ffffff">
+      </div>
+      <div class="opt-group">
+        <label>文字色</label>
+        <input type="color" id="img-text" value="#1a1a1a">
+      </div>
+    </div>
+  </details>
+
+  <!-- エディタ -->
+  <div class="editor-grid">
+    <div>
+      <p class="panel-label">マークダウン入力</p>
+      <textarea id="md-input" placeholder="# タイトル&#10;&#10;**太字** や *イタリック*&#10;&#10;- リスト項目"></textarea>
+    </div>
+    <div>
+      <p class="panel-label">プレビュー</p>
+      <div class="preview-box" id="preview-box"></div>
+    </div>
+  </div>
+
+  <!-- アクションバー -->
+  <div class="action-bar">
+    <button class="btn-primary" onclick="generateAndPush()">生成 → GitHub にプッシュ</button>
+    <button class="btn-secondary" onclick="generateOnly()">生成のみ（確認用）</button>
+    <span class="push-status" id="push-status"></span>
+  </div>
+
+  <!-- 出力 -->
+  <div class="output-section" id="output-section">
+
+    <div class="output-canvas-wrap">
+      <canvas id="output-canvas"></canvas>
+    </div>
+
+    <!-- GitHub Pages 固定リンク -->
+    <div class="gh-embed-block" id="gh-embed-block" style="display:none;">
+      <h3>✓ GitHub Pages 固定リンク（テキストを更新してもこのURLは変わりません）</h3>
+      <div class="url-row">
+        <input type="text" id="gh-pages-url" readonly>
+        <button class="btn-copy" onclick="copyFull('gh-pages-url', this)">URL コピー</button>
+      </div>
+      <div class="url-row">
+        <input type="text" id="gh-pages-md" readonly>
+        <button class="btn-copy" onclick="copyFull('gh-pages-md', this)">MD コピー</button>
+      </div>
+      <div class="url-row">
+        <input type="text" id="gh-pages-html" readonly>
+        <button class="btn-copy" onclick="copyFull('gh-pages-html', this)">HTML コピー</button>
+      </div>
+    </div>
+
+    <!-- Data URL -->
+    <div class="url-block">
+      <h3>Data URL（サーバー不要の埋め込み用）</h3>
+      <div class="url-row">
+        <input type="text" id="data-url-out" readonly>
+        <button class="btn-copy" onclick="copyFull('data-url-out', this)">コピー</button>
+      </div>
+    </div>
+
+    <div class="url-block">
+      <h3>マークダウン埋め込み記法（Data URL版）</h3>
+      <div class="url-row">
+        <input type="text" id="md-embed-out" readonly>
+        <button class="btn-copy" onclick="copyFull('md-embed-out', this)">コピー</button>
+      </div>
+    </div>
+
+    <button class="btn-secondary" onclick="downloadImage()" style="width:100%; margin-top:4px;">
+      ⬇ PNG ダウンロード
+    </button>
+  </div>
+
+  <footer>Markdown → Image Generator — GitHub Pages 対応 / 自分専用</footer>
+</div>
+
+<script>
+const store = {};
+const LS_KEY = 'md2img_config';
+
+function loadConfig() {
+  try {
+    const c = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if (c.user)   document.getElementById('gh-user').value   = c.user;
+    if (c.repo)   document.getElementById('gh-repo').value   = c.repo;
+    if (c.branch) document.getElementById('gh-branch').value = c.branch;
+    if (c.path)   document.getElementById('gh-path').value   = c.path;
+    if (c.token)  document.getElementById('gh-token').value  = c.token;
+    updateStatusDot(!!c.token);
+  } catch(e) {}
+}
+
+function saveConfig() {
+  const c = getConfig();
+  localStorage.setItem(LS_KEY, JSON.stringify(c));
+  updateStatusDot(!!c.token);
+  document.getElementById('gh-details').removeAttribute('open');
+  setStatus('設定を保存しました', 'success', 2500);
+}
+
+function getConfig() {
+  return {
+    user:   document.getElementById('gh-user').value.trim(),
+    repo:   document.getElementById('gh-repo').value.trim(),
+    branch: document.getElementById('gh-branch').value.trim() || 'main',
+    path:   document.getElementById('gh-path').value.trim()   || 'images/card.png',
+    token:  document.getElementById('gh-token').value.trim(),
+  };
+}
+
+function updateStatusDot(ok) {
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot ' + (ok ? 'ok' : 'err');
+}
+
+function ghPagesUrl(c) {
+  if (!c.user || !c.repo || !c.path) return '';
+  return `https://${c.user}.github.io/${c.repo}/${c.path}`;
+}
+
+const mdInput    = document.getElementById('md-input');
+const previewBox = document.getElementById('preview-box');
+
+function renderPreview() {
+  previewBox.innerHTML = marked.parse(mdInput.value || '');
+}
+
+mdInput.addEventListener('input', renderPreview);
+mdInput.value = `# サンプルタイトル\n\nこれは **マークダウン** を *画像* に変換するツールです。\n\n- 項目 A\n- 項目 B\n- 項目 C\n\n> 引用文もレンダリングされます。\n\n\`\`\`\nコードブロックも対応\n\`\`\``;
+renderPreview();
+
+function buildImage() {
+  return new Promise((resolve, reject) => {
+    const md = mdInput.value.trim();
+    if (!md) return reject('マークダウンを入力してください。');
+
+    const width    = parseInt(document.getElementById('img-width').value)    || 700;
+    const padding  = parseInt(document.getElementById('img-padding').value)  || 24;
+    const fontSize = parseInt(document.getElementById('img-fontsize').value) || 16;
+    const bg       = document.getElementById('img-bg').value;
+    const tc       = document.getElementById('img-text').value;
+    const html     = marked.parse(md);
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:fixed;left:-9999px;top:0;width:${width-padding*2}px;font-family:'Segoe UI',system-ui,sans-serif;font-size:${fontSize}px;line-height:1.75;color:${tc};background:${bg};`;
+    wrap.innerHTML = `
+      <style>
+        .mw{padding:${padding}px}
+        .mw h1{font-size:${fontSize*1.5}px;font-weight:700;margin:0 0 ${fontSize*.75}px;border-bottom:1.5px solid ${tc}22;padding-bottom:${fontSize*.4}px}
+        .mw h2{font-size:${fontSize*1.25}px;font-weight:600;margin:${fontSize}px 0 ${fontSize*.5}px}
+        .mw h3{font-size:${fontSize*1.1}px;font-weight:600;margin:${fontSize*.75}px 0 ${fontSize*.35}px}
+        .mw p{margin:0 0 ${fontSize*.6}px}
+        .mw ul,.mw ol{padding-left:${fontSize*1.25}px;margin:0 0 ${fontSize*.6}px}
+        .mw li{margin-bottom:${fontSize*.25}px}
+        .mw code{background:${tc}12;padding:1px 5px;border-radius:3px;font-size:${fontSize*.85}px;font-family:'Courier New',monospace}
+        .mw pre{background:${tc}08;padding:${fontSize*.75}px;border-radius:6px;margin:0 0 ${fontSize*.6}px}
+        .mw pre code{background:none;padding:0}
+        .mw blockquote{border-left:3px solid ${tc}40;margin:0 0 ${fontSize*.6}px;padding:${fontSize*.25}px ${fontSize*.75}px;color:${tc}99}
+        .mw strong{font-weight:700} .mw em{font-style:italic}
+        .mw table{border-collapse:collapse;width:100%;margin:0 0 ${fontSize*.6}px}
+        .mw th,.mw td{border:1px solid ${tc}25;padding:${fontSize*.35}px ${fontSize*.6}px}
+        .mw th{background:${tc}08;font-weight:600}
+        .mw hr{border:none;border-top:1px solid ${tc}20;margin:${fontSize}px 0}
+      </style>
+      <div class="mw">${html}</div>`;
+    document.body.appendChild(wrap);
+
+    requestAnimationFrame(() => {
+      const h = wrap.scrollHeight;
+      html2canvas(wrap, { width, height: h, backgroundColor: bg, scale: 2, logging: false, useCORS: true })
+        .then(canvas => {
+          document.body.removeChild(wrap);
+          const out = document.getElementById('output-canvas');
+          out.width = canvas.width; out.height = canvas.height;
+          out.getContext('2d').drawImage(canvas, 0, 0);
+          out.style.maxWidth = '100%';
+          const dataUrl = canvas.toDataURL('image/png', 0.95);
+          store.dataUrl = dataUrl;
+          resolve(dataUrl);
+        }).catch(reject);
+    });
+  });
+}
+
+async function generateOnly() {
+  setStatus('生成中...', '');
+  try {
+    const dataUrl = await buildImage();
+    setField('data-url-out', dataUrl);
+    setField('md-embed-out', `![markdown](${dataUrl})`);
+    document.getElementById('output-section').classList.add('visible');
+    setStatus('生成完了', 'success', 3000);
+  } catch(e) {
+    setStatus('エラー: ' + e, 'error');
+  }
+}
+
+async function generateAndPush() {
+  const c = getConfig();
+  if (!c.token || !c.user || !c.repo) {
+    setStatus('GitHub 設定を入力・保存してください', 'error', 4000);
+    document.getElementById('gh-details').setAttribute('open', '');
+    return;
+  }
+
+  setStatus('画像を生成中...', '');
+  let dataUrl;
+  try { dataUrl = await buildImage(); }
+  catch(e) { setStatus('生成エラー: ' + e, 'error'); return; }
+
+  setStatus('GitHub にプッシュ中...', '');
+  try {
+    await pushToGitHub(c, dataUrl);
+    const url = ghPagesUrl(c);
+    setField('gh-pages-url',  url);
+    setField('gh-pages-md',   `![markdown](${url})`);
+    setField('gh-pages-html', `<img src="${url}" alt="markdown">`);
+    document.getElementById('gh-embed-block').style.display = 'block';
+    setField('data-url-out', dataUrl);
+    setField('md-embed-out', `![markdown](${dataUrl})`);
+    document.getElementById('output-section').classList.add('visible');
+    setStatus('✓ プッシュ完了！GitHub Pages への反映まで数秒かかります', 'success');
+  } catch(e) {
+    setStatus('プッシュ失敗: ' + e.message, 'error');
+  }
+}
+
+async function pushToGitHub(c, dataUrl) {
+  const apiUrl = `https://api.github.com/repos/${c.user}/${c.repo}/contents/${c.path}`;
+  const headers = {
+    'Authorization': `Bearer ${c.token}`,
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'Content-Type': 'application/json',
+  };
+  const b64 = dataUrl.split(',')[1];
+
+  let sha;
+  try {
+    const r = await fetch(`${apiUrl}?ref=${c.branch}`, { headers });
+    if (r.ok) sha = (await r.json()).sha;
+  } catch(e) {}
+
+  const body = {
+    message: `update image [${new Date().toISOString()}]`,
+    content: b64,
+    branch: c.branch,
+  };
+  if (sha) body.sha = sha;
+
+  const res = await fetch(apiUrl, { method: 'PUT', headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `HTTP ${res.status}`);
+  }
+}
+
+function setField(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.dataset.full = value;
+  el.value = value.length > 90 ? value.slice(0, 90) + '...' : value;
+}
+
+function copyFull(id, btn) {
+  const el = document.getElementById(id);
+  const text = el.dataset.full || el.value;
+  const origText = btn.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ コピー済';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = origText; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function downloadImage() {
+  if (!store.dataUrl) return;
+  const a = document.createElement('a');
+  a.href = store.dataUrl;
+  a.download = 'markdown-image.png';
+  a.click();
+}
+
+let statusTimer;
+function setStatus(msg, type, autoClear) {
+  const el = document.getElementById('push-status');
+  el.textContent = msg;
+  el.className = 'push-status ' + (type || '');
+  clearTimeout(statusTimer);
+  if (autoClear) statusTimer = setTimeout(() => { el.textContent = ''; el.className = 'push-status'; }, autoClear);
+}
+
+loadConfig();
+</script>
+</body>
+</html>
